@@ -1,0 +1,36 @@
+{
+  "project": {
+    "name": "VLIP Platform",
+    "description": "Vehicle Lifecycle Integration Platform with Blockchain Certificates and AI-Powered Predictive Maintenance",
+    "version": "2.0.0"
+  },
+  "features": {
+    "ai_powered_maintenance": true,
+    "blockchain_certificates": true,
+    "predictive_analytics": true,
+    "real_time_alerts": true,
+    "pdf_reports": true,
+    "role_based_access": true,
+    "gemini_integration": true
+  },
+  "ai_capabilities": {
+    "health_analysis": true,
+    "maintenance_recommendations": true,
+    "vehicle_qa": true,
+    "report_generation": true,
+    "predictive_maintenance": true
+  },
+  "environment_variables": {
+    "required": [
+      "DATABASE_URL",
+      "JWT_SECRET",
+      "GEMINI_API_KEY"
+    ],
+    "optional": [
+      "SMTP_HOST",
+      "SMTP_PORT",
+      "SMTP_USER",
+      "SMTP_PASS"
+    ]
+  }
+}

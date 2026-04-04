@@ -1,0 +1,18 @@
+import { Router } from 'express';
+import { VehicleController } from '../controllers/vehicle.controller';
+import { authenticateToken } from '../middleware/auth.middleware';
+
+const router = Router();
+const vehicleController = new VehicleController();
+
+// All vehicle routes require authentication
+router.use(authenticateToken);
+
+// Vehicle CRUD operations
+router.post('/', vehicleController.createVehicle.bind(vehicleController));
+router.get('/', vehicleController.getUserVehicles.bind(vehicleController));
+router.get('/:id', vehicleController.getVehicleById.bind(vehicleController));
+router.put('/:id', vehicleController.updateVehicle.bind(vehicleController));
+router.delete('/:id', vehicleController.deleteVehicle.bind(vehicleController));
+
+export default router;

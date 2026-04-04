@@ -1,0 +1,367 @@
+import { Request, Response } from 'express';
+import { prisma } from '../lib/prisma';
+
+export class VehicleController {
+  async createVehicle(req: Request, res: Response) {
+    try {
+      const { vin, manufacturer, model, year, ownerId } = req.body;
+      const currentUser = (req as any).user;
+      
+      let vehicleOwnerId = currentUser.id;
+      
+      if (currentUser.role === 'ADMIN' || currentUser.role === 'FLEET_MANAGER') {
+        if (ownerId) {
+          vehicleOwnerId = ownerId;
+        }
+      }
+      
+      if (!vin || !manufacturer || !model || !year) {
+        return res.status(400).json({
+          error: 'Missing required fields',
+          required: ['vin', 'manufacturer', 'model', 'year']
+        });
+      }
+      
+      const existingVehicle = await prisma.vehicle.findUnique({
+        where: { vin }
+      });
+      
+      if (existingVehicle) {
+        return res.status(400).json({ error: 'Vehicle already registered' });
+      }
+      
+      const vehicle = await prisma.vehicle.create({
+        data: {
+          vin,
+          manufacturer,
+          model,
+          year,
+          ownerId: vehicleOwnerId
+        }
+      });
+      
+      res.status(201).json({
+        success: true,
+        message: 'Vehicle registered successfully',
+        vehicle
+      });
+    } catch (error) {
+      console.error('Create vehicle error:', error);
+      res.status(500).json({ error: 'Failed to register vehicle' });
+    }
+  }
+  
+  async getUserVehicles(req: Request, res: Response) {
+    try {
+      const currentUser = (req as any).user;
+      
+      if (currentUser.role === 'ADMIN') {
+        const allVehicles = await prisma.vehicle.findMany({
+          include: {
+            owner: {
+              select: { name: true, email: true, role: true }
+            }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+        return res.json({ success: true, vehicles: allVehicles });
+      }
+      
+      if (currentUser.role === 'FLEET_MANAGER') {
+        const fleetVehicles = await prisma.vehicle.findMany({
+          include: {
+            owner: {
+              select: { name: true, email: true, role: true }
+            }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+        return res.json({ success: true, vehicles: fleetVehicles });
+      }
+      
+      const userVehicles = await prisma.vehicle.findMany({
+        where: { ownerId: currentUser.id },
+        orderBy: { createdAt: 'desc' }
+      });
+      
+      res.json({ success: true, vehicles: userVehicles });
+    } catch (error) {
+      console.error('Get vehicles error:', error);
+      res.status(500).json({ error: 'Failed to fetch vehicles' });
+    }
+  }
+  
+  async getVehicleById(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const currentUser = (req as any).user;
+      
+      const vehicle = await prisma.vehicle.findUnique({
+        where: { id },
+        include: {
+          owner: {
+            select: { name: true, email: true, role: true }
+          }
+        }
+      });
+      
+      if (!vehicle) {
+        return res.status(404).json({ error: 'Vehicle not found' });
+      }
+      
+      if (currentUser.role === 'DRIVER' && vehicle.ownerId !== currentUser.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      res.json({ success: true, vehicle });
+    } catch (error) {
+      console.error('Get vehicle error:', error);
+      res.status(500).json({ error: 'Failed to fetch vehicle' });
+    }
+  }
+  
+  async updateVehicle(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const currentUser = (req as any).user;
+      const { manufacturer, model, year } = req.body;
+      
+      const existingVehicle = await prisma.vehicle.findUnique({
+        where: { id }
+      });
+      
+      if (!existingVehicle) {
+        return res.status(404).json({ error: 'Vehicle not found' });
+      }
+      
+      if (currentUser.role !== 'ADMIN' && existingVehicle.ownerId !== currentUser.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      const vehicle = await prisma.vehicle.update({
+        where: { id },
+        data: {
+          manufacturer: manufacturer || existingVehicle.manufacturer,
+          model: model || existingVehicle.model,
+          year: year || existingVehicle.year
+        }
+      });
+      
+      res.json({
+        success: true,
+        message: 'Vehicle updated successfully',
+        vehicle
+      });
+    } catch (error) {
+      console.error('Update vehicle error:', error);
+      res.status(500).json({ error: 'Failed to update vehicle' });
+    }
+  }
+  
+  async deleteVehicle(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const currentUser = (req as any).user;
+      
+      const existingVehicle = await prisma.vehicle.findUnique({
+        where: { id }
+      });
+      
+      if (!existingVehicle) {
+        return res.status(404).json({ error: 'Vehicle not found' });
+      }
+      
+      if (currentUser.role !== 'ADMIN' && existingVehicle.ownerId !== currentUser.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      await prisma.vehicle.delete({
+        where: { id }
+      });
+      
+      res.json({
+        success: true,
+        message: 'Vehicle deleted successfully'
+      });
+    } catch (error) {
+      console.error('Delete vehicle error:', error);
+      res.status(500).json({ error: 'Failed to delete vehicle' });
+    }
+  }
+
+  // ==================== CERTIFICATE METHODS ====================
+  
+  async issueCertificate(req: Request, res: Response) {
+    try {
+      const { vehicleId } = req.params;
+      const currentUser = (req as any).user;
+
+      const vehicle = await prisma.vehicle.findUnique({
+        where: { id: vehicleId }
+      });
+
+      if (!vehicle) {
+        return res.status(404).json({ error: 'Vehicle not found' });
+      }
+
+      if (currentUser.role === 'DRIVER' && vehicle.ownerId !== currentUser.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const dataToHash = vehicle.vin + Date.now() + vehicle.id;
+      const blockchainHash = `0x${Buffer.from(dataToHash).toString('hex').substring(0, 64)}`;
+
+      const certificate = await prisma.certificate.create({
+        data: {
+          certificateId: `CERT-${Date.now()}-${vehicleId}`,
+          vehicleId: vehicle.id,
+          data: {
+            vin: vehicle.vin,
+            manufacturer: vehicle.manufacturer,
+            model: vehicle.model,
+            year: vehicle.year,
+            issuedAt: new Date().toISOString(),
+            issuedBy: currentUser.id,
+            issuedByName: currentUser.name
+          },
+          blockchainHash: blockchainHash
+        }
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Certificate issued successfully',
+        certificate
+      });
+    } catch (error) {
+      console.error('Issue certificate error:', error);
+      res.status(500).json({ error: 'Failed to issue certificate' });
+    }
+  }
+
+  async getVehicleCertificates(req: Request, res: Response) {
+    try {
+      const { vehicleId } = req.params;
+      const currentUser = (req as any).user;
+
+      const vehicle = await prisma.vehicle.findUnique({
+        where: { id: vehicleId }
+      });
+
+      if (!vehicle) {
+        return res.status(404).json({ error: 'Vehicle not found' });
+      }
+
+      if (currentUser.role === 'DRIVER' && vehicle.ownerId !== currentUser.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const certificates = await prisma.certificate.findMany({
+        where: { vehicleId },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      res.json({
+        success: true,
+        count: certificates.length,
+        certificates
+      });
+    } catch (error) {
+      console.error('Get certificates error:', error);
+      res.status(500).json({ error: 'Failed to fetch certificates' });
+    }
+  }
+
+  async verifyCertificate(req: Request, res: Response) {
+    try {
+      const { certificateId } = req.params;
+
+      const certificate = await prisma.certificate.findUnique({
+        where: { certificateId }
+      });
+
+      if (!certificate) {
+        return res.status(404).json({
+          success: false,
+          message: 'Certificate not found',
+          isValid: false
+        });
+      }
+
+      const vehicle = await prisma.vehicle.findUnique({
+        where: { id: certificate.vehicleId }
+      });
+
+      if (!vehicle) {
+        return res.status(404).json({
+          success: false,
+          message: 'Vehicle not found for this certificate',
+          isValid: false
+        });
+      }
+
+      const dataToHash = vehicle.vin + certificate.createdAt.getTime() + certificate.vehicleId;
+      const expectedHash = `0x${Buffer.from(dataToHash).toString('hex').substring(0, 64)}`;
+      const isValid = certificate.blockchainHash === expectedHash;
+
+      res.json({
+        success: true,
+        isValid: isValid,
+        certificate: {
+          id: certificate.certificateId,
+          issuedAt: certificate.createdAt,
+          vehicleInfo: {
+            vin: vehicle.vin,
+            manufacturer: vehicle.manufacturer,
+            model: vehicle.model,
+            year: vehicle.year
+          },
+          blockchainHash: certificate.blockchainHash,
+          verificationStatus: isValid ? 'Verified' : 'Tampered'
+        }
+      });
+    } catch (error) {
+      console.error('Verify certificate error:', error);
+      res.status(500).json({ error: 'Failed to verify certificate' });
+    }
+  }
+
+  async revokeCertificate(req: Request, res: Response) {
+    try {
+      const { certificateId } = req.params;
+      const currentUser = (req as any).user;
+
+      const certificate = await prisma.certificate.findUnique({
+        where: { certificateId }
+      });
+
+      if (!certificate) {
+        return res.status(404).json({ error: 'Certificate not found' });
+      }
+
+      const vehicle = await prisma.vehicle.findUnique({
+        where: { id: certificate.vehicleId }
+      });
+
+      if (!vehicle) {
+        return res.status(404).json({ error: 'Vehicle not found' });
+      }
+
+      if (currentUser.role === 'DRIVER' && vehicle.ownerId !== currentUser.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      await prisma.certificate.delete({
+        where: { certificateId }
+      });
+
+      res.json({
+        success: true,
+        message: 'Certificate revoked successfully'
+      });
+    } catch (error) {
+      console.error('Revoke certificate error:', error);
+      res.status(500).json({ error: 'Failed to revoke certificate' });
+    }
+  }
+}
